@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Ventas de Huevos</title>
+  
+  <!-- Leaflet CSS (Mapa) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    :root {
+      --primary: #f39c12;
+      --primary-dark: #d35400;
+      --success: #27ae60;
+      --danger: #c0392b;
+      --bg: #f8f9fa;
+      --card-bg: #ffffff;
+      --text: #2c3e50;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 15px; max-width: 900px; margin: 0 auto; }
+
+    header {
+      text-align: center;
+      padding: 15px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #f39c12, #e67e22);
+      color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    header h1 { font-size: 1.5rem; margin-bottom: 5px; }
+
+    .card {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+      color: var(--primary-dark);
+      border-bottom: 2px solid #f1f1f1;
+      padding-bottom: 8px;
+    }
+
+    /* Formulario */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.full-width { grid-column: 1 / -1; }
+
+    label { font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+    input { padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; }
+
+    .btn {
+      display: inline-block; width: 100%; background-color: var(--primary);
+      color: white; border: none; padding: 12px; border-radius: 8px;
+      font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 10px;
+    }
+    .btn:hover { background-color: var(--primary-dark); }
+    .btn:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+
+    /* Indicadores KPI */
+    .kpi-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    @media (max-width: 600px) { .kpi-container { grid-template-columns: 1fr; } }
+
+    .kpi-card {
+      background: white; padding: 15px; border-radius: 10px; text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--primary);
+    }
+    .kpi-card.success { border-left-color: var(--success); }
+    .kpi-card.danger { border-left-color: var(--danger); }
+    .kpi-card span { display: block; font-size: 0.8rem; color: #777; }
+    .kpi-card strong { font-size: 1.2rem; color: #333; }
+
+    /* Mapa */
+    #map { height: 300px; width: 100%; border-radius: 10px; z-index: 1; }
+
+    /* Lista */
+    .cliente-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; flex-direction: column; gap: 6px; }
+    .cliente-header { display: flex; justify-content: space-between; align-items: center; }
+    .badge-deuda { background-color: #fce4e4; color: var(--danger); padding: 3px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+    .badge-ok { background-color: #e8f8f0; color: var(--success); padding: 3px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+    
+    .btn-ws {
+      background-color: #25d366; color: white; text-decoration: none; padding: 8px 12px;
+      border-radius: 6px; font-size: 0.85rem; font-weight: bold; display: inline-block; margin-top: 5px;
+    }
+    .gps-status { font-size: 0.8rem; color: #666; font-style: italic; margin-top: 5px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🥚 Control de Ventas de Huevos</h1>
+    <p>Registro de Compras, Ventas, Fiados y Rutas</p>
+  </header>
+
+  <!-- Indicadores Clave -->
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <span>Total Paquetes</span>
+      <strong id="kpiPaquetes">0</strong>
+    </div>
+    <div class="kpi-card success">
+      <span>Total Cobrado</span>
+      <strong id="kpiCobrado">S/ 0.00</strong>
+    </div>
+    <div class="kpi-card danger">
+      <span>Fiado Pendiente</span>
+      <strong id="kpiDeuda">S/ 0.00</strong>
+    </div>
+  </div>
+
+  <!-- Formulario -->
+  <div class="card">
+    <h2>➕ Registrar Nueva Venta</h2>
+    <form id="formVenta" onsubmit="guardarVenta(event)">
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label for="nombre">Nombre de la Tienda / Cliente</label>
+          <input type="text" id="nombre" placeholder="Ej. Tienda Doña María" required>
+        </div>
+
+        <div class="form-group">
+          <label for="telefono">WhatsApp / Teléfono</label>
+          <input type="tel" id="telefono" placeholder="Ej. 51999888777" required>
+        </div>
+
+        <div class="form-group">
+          <label for="paquetes">Cantidad de Paquetes</label>
+          <input type="number" id="paquetes" min="1" placeholder="Ej. 5" required>
+        </div>
+
+        <div class="form-group">
+          <label for="montoPagado">Monto Pagado (\$ / S/)</label>
+          <input type="number" step="0.10" id="montoPagado" value="0" required>
+        </div>
+
+        <div class="form-group">
+          <label for="deuda">Monto Fiado / Deuda (\$ / S/)</label>
+          <input type="number" step="0.10" id="deuda" value="0">
+        </div>
+
+        <div class="form-group full-width">
+          <label for="dias">Días para reponer stock</label>
+          <input type="number" id="dias" value="7" required>
+        </div>
+      </div>
+
+      <p class="gps-status" id="gpsStatus">📍 Ubicación GPS: Obteniendo...</p>
+      <button type="submit" class="btn" id="btnGuardar">Guardar y Enviar a Google Sheets</button>
+    </form>
+  </div>
+
+  <!-- Mapa -->
+  <div class="card">
+    <h2>🗺️ Mapa de Clientes</h2>
+    <div id="map"></div>
+  </div>
+
+  <!-- Lista -->
+  <div class="card">
+    <h2>📋 Registro de Ventas y Cobros</h2>
+    <div id="listaClientes"><p style="text-align: center; color: #888;">Cargando registro...</p></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // ⚠️ COLOCA AQUÍ LA URL OBTENIDA DE GOOGLE APPS SCRIPT
+    const SCRIPT_URL = 'AQUI_VA_TU_URL_DE_GOOGLE_APPS_SCRIPT';
+
+    let currentLat = -12.046374;
+    let currentLng = -77.042793;
+    let map;
+    let markersLayer = L.layerGroup();
+
+    function initMap() {
+      map = L.map('map').setView([currentLat, currentLng], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+      markersLayer.addTo(map);
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          currentLat = pos.coords.latitude;
+          currentLng = pos.coords.longitude;
+          map.setView([currentLat, currentLng], 14);
+          document.getElementById('gpsStatus').innerText = `📍 Ubicación detectada (${currentLat.toFixed(4)}, ${currentLng.toFixed(4)})`;
+        }, () => {
+          document.getElementById('gpsStatus').innerText = '⚠️ Usando ubicación predeterminada.';
+        });
+      }
+    }
+
+    async function guardarVenta(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btnGuardar');
+      btn.disabled = true;
+      btn.innerText = 'Guardando...';
+
+      const payload = {
+        fecha: new Date().toLocaleString(),
+        nombre: document.getElementById('nombre').value.trim(),
+        telefono: document.getElementById('telefono').value.trim(),
+        paquetes: document.getElementById('paquetes').value,
+        montoPagado: document.getElementById('montoPagado').value || 0,
+        deuda: document.getElementById('deuda').value || 0,
+        dias: document.getElementById('dias').value || 7,
+        lat: currentLat,
+        lng: currentLng
+      };
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        alert('✅ Venta registrada en Google Sheets.');
+        document.getElementById('formVenta').reset();
+        document.getElementById('montoPagado').value = '0';
+        document.getElementById('deuda').value = '0';
+        document.getElementById('dias').value = '7';
+
+        setTimeout(cargarDatos, 1500);
+      } catch (err) {
+        alert('❌ Error al registrar la venta.');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Guardar y Enviar a Google Sheets';
+      }
+    }
+
+    async function cargarDatos() {
+      const contenedor = document.getElementById('listaClientes');
+      if (!SCRIPT_URL || SCRIPT_URL.includes('AQUI_VA_TU_URL')) {
+        contenedor.innerHTML = '<p style="color:red; text-align:center;">Falta colocar la URL de Google Apps Script en index.html</p>';
+        return;
+      }
+
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const data = await res.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          contenedor.innerHTML = '<p style="text-align:center; color:#888;">Aún no hay ventas registradas.</p>';
+          return;
+        }
+
+        contenedor.innerHTML = '';
+        markersLayer.clearLayers();
+
+        let totalPaquetes = 0, totalCobrado = 0, totalDeuda = 0;
+
+        data.reverse().forEach((c) => {
+          const paquetes = Number(c.paquetes) || 0;
+          const pagado = Number(c.montoPagado) || 0;
+          const deuda = Number(c.deuda) || 0;
+
+          totalPaquetes += paquetes;
+          totalCobrado += pagado;
+          totalDeuda += deuda;
+
+          const mensajeWS = encodeURIComponent(`Hola ${c.nombre}, ¿cómo está? Le escribo para ver si necesita reponer paquetes de huevos para estos días.`);
+          const linkWS = `https://wa.me/${c.telefono.replace(/[^0-9]/g, '')}?text=${mensajeWS}`;
+
+          const item = document.createElement('div');
+          item.className = 'cliente-item';
+          item.innerHTML = `
+            <div class="cliente-header">
+              <strong>🏬 ${c.nombre}</strong>
+              ${deuda > 0 ? `<span class="badge-deuda">Debe: S/ \${deuda.toFixed(2)}</span>` : `<span class="badge-ok">Pagado</span>`}
+            </div>
+            <div style="font-size:0.85rem; color:#666;">
+              Paquetes: ${c.paquetes} | Pagado: S/ ${pagado.toFixed(2)} | Fecha: ${c.fecha}
+            </div>
+            <div>
+              <a href="${linkWS}" target="_blank" class="btn-ws">📲 Recordar reposición por WhatsApp</a>
+            </div>
+          `;
+          contenedor.appendChild(item);
+
+          if (c.lat && c.lng) {
+            const marker = L.marker([c.lat, c.lng]).addTo(markersLayer);
+            marker.bindPopup(`<b>${c.nombre}</b><br>Deuda: S/ ${deuda.toFixed(2)}<br><a href="${linkWS}" target="_blank">Enviar WhatsApp</a>`);
+          }
+        });
+
+        document.getElementById('kpiPaquetes').innerText = totalPaquetes;
+        document.getElementById('kpiCobrado').innerText = `S/ ${totalCobrado.toFixed(2)}`;
+        document.getElementById('kpiDeuda').innerText = `S/ ${totalDeuda.toFixed(2)}`;
+
+      } catch (err) {
+        contenedor.innerHTML = '<p style="color:red; text-align:center;">Error al cargar datos desde Google Sheets.</p>';
+      }
+    }
+
+    window.onload = () => { initMap(); cargarDatos(); };
+  </script>
+</body>
+</html>
